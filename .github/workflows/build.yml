@@ -43,9 +43,6 @@ jobs:
         context: .
         push: true
         tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-        # 빌드 캐시 활용 (재빌드 속도 향상)
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
 
     # # ── 5. FastAPI 배포 API 호출 ──────────────────────
     # - name: Trigger Deploy API
