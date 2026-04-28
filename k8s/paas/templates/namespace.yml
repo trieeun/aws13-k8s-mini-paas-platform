@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ns-{{ app_name }}
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: quota-{{ app_name }}
+  namespace: ns-{{ app_name }}
+spec:
+  hard:
+    requests.cpu: "500m"
+    requests.memory: "512Mi"
+    limits.cpu: "1"
+    limits.memory: "1Gi"
+    pods: "10"

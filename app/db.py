@@ -1,19 +1,51 @@
+import os
 import sqlite3
+from datetime import datetime
+
+# 로컬 개발 시 현재 디렉토리, 마스터 노드에서는 /k8s/paas/ 사용
+DB_PATH = os.getenv("DB_PATH", "deployments.db")
 
 def init_db():
-    conn = sqlite3.connect("paas.db")
-    cursor = conn.cursor()
-    cursor.execute("""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS deployments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            app_name TEXT,
-            github_url TEXT,
-            status TEXT,
+            app_name TEXT PRIMARY KEY,
+            image TEXT,
+            port INTEGER,
             url TEXT,
+            status TEXT,
             started_at TEXT,
-            completed_at TEXT,
-            deploy_time_sec REAL
+            finished_at TEXT
         )
     """)
+    conn.commit()
+    conn.close()
+
+def save_deployment(app_name, image, port, url, status, started_at, finished_at=None):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        INSERT OR REPLACE INTO deployments
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (app_name, image, port, url, status, started_at, finished_at))
+    conn.commit()
+    conn.close()
+
+def get_all_deployments():
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute("SELECT * FROM deployments").fetchall()
+    conn.close()
+    return rows
+
+def get_deployment(app_name):
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT * FROM deployments WHERE app_name = ?", (app_name,)
+    ).fetchone()
+    conn.close()
+    return row
+
+def delete_deployment(app_name):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM deployments WHERE app_name = ?", (app_name,))
     conn.commit()
     conn.close()
