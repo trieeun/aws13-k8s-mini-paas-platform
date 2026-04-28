@@ -1,0 +1,23 @@
+name: Build and Push to ghcr.io
+
+on:
+  push:
+    branches:
+      - main          # main 브랜치에 push 시 자동 실행
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v3
+
+      - name: ghcr.io 로그인
+        run: echo "${{ secrets.CR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Docker 이미지 빌드 및 푸시
+        run: |
+          IMAGE=ghcr.io/${{ github.repository_owner }}/mini-paas:latest
+          docker build -t $IMAGE .
+          docker push $IMAGE
