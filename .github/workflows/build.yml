@@ -18,6 +18,6 @@ jobs:
 
       - name: Docker 이미지 빌드 및 푸시
         run: |
-          IMAGE=ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:latest
+          IMAGE=ghcr.io/${{ github.repository_owner }}/mini-paas:latest
           docker build -t $IMAGE .
           docker push $IMAGE
