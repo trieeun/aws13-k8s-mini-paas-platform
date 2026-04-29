@@ -6,6 +6,8 @@ from datetime import datetime
 import os
 import db
 import k8s_client
+from database.database import Base, engine
+from routers import todo
 
 app = FastAPI()
 
@@ -111,9 +113,21 @@ def deployments():
 def delete(app_name: str):
     if not db.get_deployment(app_name):
         raise HTTPException(status_code=404, detail="앱 없음")
+        
     try:
         k8s_client.delete_app(app_name)
         db.delete_deployment(app_name)
         return {"result": f"{app_name} 삭제 완료"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI()
+app.mount("/static", StaticFiles(directory="static"), name="static")
+app.include_router(todo.router, prefix="/todos", tags=["Todos"])
+
+@app.get("/")
+def read_root():
+    return FileResponse("static/index.html")
