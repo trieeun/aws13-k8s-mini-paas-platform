@@ -1,10 +1,20 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from datetime import datetime
+import os
 import db
 import k8s_client
 
 app = FastAPI()
+
+_static_dir = os.path.join(os.path.dirname(__file__), "static")
+app.mount("/static", StaticFiles(directory=_static_dir), name="static")
+
+@app.get("/")
+def dashboard():
+    return FileResponse(os.path.join(_static_dir, "index.html"))
 db.init_db()
 
 

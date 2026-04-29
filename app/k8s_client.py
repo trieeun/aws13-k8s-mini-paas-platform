@@ -107,9 +107,32 @@ def deploy(app_name, github_url, port):
 
 
 def delete_app(app_name):
-    subprocess.run([
-        "kubectl", "delete", "namespace", f"ns-{app_name}"
-    ], check=True)
+    import time
+    ns_name = f"ns-{app_name}"
+    v1 = client.CoreV1Api()
+
+    try:
+        v1.delete_namespace(ns_name)
+    except client.exceptions.ApiException as e:
+        if e.status != 404:
+            raise
+
+    # Terminating 상태에서 finalizer가 걸리면 강제 제거
+    for _ in range(15):
+        time.sleep(2)
+        try:
+            ns = v1.read_namespace(ns_name)
+        except client.exceptions.ApiException as e:
+            if e.status == 404:
+                return
+            raise
+
+        if ns.spec.finalizers:
+            ns.spec.finalizers = []
+            try:
+                v1.replace_namespace_finalize(ns_name, ns)
+            except client.exceptions.ApiException:
+                pass
 
 
 def get_status(app_name):
