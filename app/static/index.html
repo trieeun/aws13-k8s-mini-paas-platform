@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>K8s PaaS Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: #1a1d27;
+      border-bottom: 1px solid #2d3148;
+      padding: 0 2rem;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    header h1 { font-size: 1rem; font-weight: 600; letter-spacing: 0.02em; }
+    header h1 span { color: #6366f1; }
+    .header-right { display: flex; align-items: center; gap: 1rem; }
+    #cluster-badge {
+      font-size: 0.75rem;
+      background: #1e3a5f;
+      color: #60a5fa;
+      padding: 3px 10px;
+      border-radius: 99px;
+      border: 1px solid #2563eb44;
+    }
+
+    /* ── Layout ── */
+    main { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+
+    /* ── Stat cards ── */
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 2rem; }
+    .stat-card {
+      background: #1a1d27;
+      border: 1px solid #2d3148;
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+    }
+    .stat-card .label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; }
+    .stat-card .value { font-size: 2rem; font-weight: 700; margin-top: 4px; }
+    .stat-card.running .value { color: #34d399; }
+    .stat-card.total .value   { color: #818cf8; }
+    .stat-card.pods .value    { color: #fb923c; }
+
+    /* ── Section header ── */
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+    }
+    .section-header h2 { font-size: 0.95rem; font-weight: 600; }
+
+    /* ── Deploy button ── */
+    #btn-deploy-modal {
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      padding: 7px 16px;
+      border-radius: 7px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    #btn-deploy-modal:hover { background: #4f46e5; }
+
+    /* ── App cards grid ── */
+    #cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 1rem;
+    }
+
+    .app-card {
+      background: #1a1d27;
+      border: 1px solid #2d3148;
+      border-radius: 10px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      transition: border-color 0.15s;
+    }
+    .app-card:hover { border-color: #6366f1; }
+
+    .card-top { display: flex; align-items: flex-start; justify-content: space-between; }
+    .app-name { font-size: 1rem; font-weight: 700; }
+    .status-badge {
+      font-size: 0.7rem;
+      padding: 3px 9px;
+      border-radius: 99px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .status-Running  { background: #064e3b; color: #34d399; }
+    .status-Pending  { background: #451a03; color: #fb923c; }
+    .status-Failed   { background: #450a0a; color: #f87171; }
+    .status-Unknown  { background: #1e293b; color: #94a3b8; }
+
+    .card-meta { font-size: 0.78rem; color: #64748b; display: flex; flex-direction: column; gap: 4px; }
+    .card-meta a { color: #818cf8; text-decoration: none; }
+    .card-meta a:hover { text-decoration: underline; }
+
+    .card-url {
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 0.78rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+    .card-url a { color: #60a5fa; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .card-url a:hover { text-decoration: underline; }
+
+    .card-actions { display: flex; gap: 0.5rem; }
+    .btn-sm {
+      flex: 1;
+      padding: 6px 0;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn-sm:hover { opacity: 0.8; }
+    .btn-status { background: #1e293b; color: #94a3b8; }
+    .btn-delete { background: #450a0a; color: #f87171; }
+
+    /* ── Empty state ── */
+    #empty {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 4rem 0;
+      color: #475569;
+    }
+    #empty p { margin-top: 0.5rem; font-size: 0.85rem; }
+
+    /* ── Modal backdrop ── */
+    .modal-bg {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #00000099;
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-bg.open { display: flex; }
+
+    .modal {
+      background: #1a1d27;
+      border: 1px solid #2d3148;
+      border-radius: 12px;
+      padding: 1.75rem;
+      width: 420px;
+      max-width: 95vw;
+    }
+    .modal h3 { font-size: 1rem; font-weight: 700; margin-bottom: 1.25rem; }
+
+    .form-group { margin-bottom: 1rem; }
+    .form-group label { display: block; font-size: 0.78rem; color: #94a3b8; margin-bottom: 5px; }
+    .form-group input {
+      width: 100%;
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 7px;
+      padding: 8px 12px;
+      color: #e2e8f0;
+      font-size: 0.85rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .form-group input:focus { border-color: #6366f1; }
+
+    .modal-actions { display: flex; gap: 0.75rem; margin-top: 1.25rem; }
+    .btn-cancel {
+      flex: 1; padding: 9px 0; border: 1px solid #2d3148;
+      background: transparent; color: #94a3b8;
+      border-radius: 7px; font-size: 0.85rem; cursor: pointer;
+    }
+    .btn-submit {
+      flex: 2; padding: 9px 0; border: none;
+      background: #6366f1; color: #fff;
+      border-radius: 7px; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    }
+    .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Status modal ── */
+    #status-modal .modal { width: 520px; }
+    .status-section { margin-bottom: 1rem; }
+    .status-section h4 { font-size: 0.78rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+    .pod-row {
+      display: flex; align-items: center; gap: 0.75rem;
+      background: #0f1117; border: 1px solid #2d3148;
+      border-radius: 6px; padding: 8px 12px;
+      font-size: 0.8rem; margin-bottom: 4px;
+    }
+    .pod-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .pod-dot.Running { background: #34d399; }
+    .pod-dot.Pending { background: #fb923c; }
+    .pod-dot.Failed  { background: #f87171; }
+    .pod-name { flex: 1; font-family: monospace; color: #94a3b8; font-size: 0.75rem; }
+    .hpa-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    .hpa-item {
+      background: #0f1117; border: 1px solid #2d3148;
+      border-radius: 6px; padding: 8px 12px;
+    }
+    .hpa-item .k { font-size: 0.7rem; color: #64748b; }
+    .hpa-item .v { font-size: 1rem; font-weight: 700; color: #818cf8; margin-top: 2px; }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed; bottom: 1.5rem; right: 1.5rem;
+      background: #1a1d27; border: 1px solid #2d3148;
+      border-radius: 8px; padding: 10px 16px;
+      font-size: 0.82rem; z-index: 999;
+      opacity: 0; transform: translateY(8px);
+      transition: all 0.2s; pointer-events: none;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+    #toast.success { border-color: #34d399; color: #34d399; }
+    #toast.error   { border-color: #f87171; color: #f87171; }
+    #toast.info    { border-color: #818cf8; color: #818cf8; }
+
+    /* ── Spinner ── */
+    .spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid #ffffff44; border-top-color: #fff;
+      border-radius: 50%; animation: spin 0.6s linear infinite;
+      vertical-align: middle; margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1><span>K8s</span> mini PaaS Dashboard</h1>
+  <div class="header-right">
+    <span id="cluster-badge">211.183.3.200</span>
+  </div>
+</header>
+
+<main>
+  <!-- Stat cards -->
+  <div class="stats">
+    <div class="stat-card total">
+      <div class="label">Total Apps</div>
+      <div class="value" id="stat-total">-</div>
+    </div>
+    <div class="stat-card running">
+      <div class="label">Running</div>
+      <div class="value" id="stat-running">-</div>
+    </div>
+    <div class="stat-card pods">
+      <div class="label">Avg Deploy Time</div>
+      <div class="value" id="stat-elapsed">-</div>
+    </div>
+  </div>
+
+  <!-- Deployments section -->
+  <div class="section-header">
+    <h2>Deployments</h2>
+    <button id="btn-deploy-modal">+ New Deploy</button>
+  </div>
+
+  <div id="cards">
+    <div id="empty">
+      <div style="font-size:2rem">🚀</div>
+      <p>배포된 앱이 없습니다. New Deploy 버튼으로 시작하세요.</p>
+    </div>
+  </div>
+</main>
+
+<!-- Deploy modal -->
+<div class="modal-bg" id="deploy-modal">
+  <div class="modal">
+    <h3>New Deployment</h3>
+    <div class="form-group">
+      <label>App Name</label>
+      <input id="f-app" type="text" placeholder="todo-app" />
+    </div>
+    <div class="form-group">
+      <label>GitHub URL</label>
+      <input id="f-url" type="text" placeholder="https://github.com/user/repo" />
+    </div>
+    <div class="form-group">
+      <label>Port</label>
+      <input id="f-port" type="number" placeholder="8000" value="8000" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="btn-cancel-deploy">취소</button>
+      <button class="btn-submit" id="btn-submit-deploy">Deploy</button>
+    </div>
+  </div>
+</div>
+
+<!-- Status modal -->
+<div class="modal-bg" id="status-modal">
+  <div class="modal">
+    <h3 id="status-modal-title">App Status</h3>
+    <div id="status-modal-body"></div>
+    <div class="modal-actions" style="margin-top:1rem">
+      <button class="btn-cancel" id="btn-close-status">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+  const API = '';  // same origin
+
+  // ── Toast ──
+  function toast(msg, type = 'info', duration = 3000) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = `show ${type}`;
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.className = '', duration);
+  }
+
+  // ── Modal helpers ──
+  function openModal(id)  { document.getElementById(id).classList.add('open'); }
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+  // ── Fetch deployments ──
+  async function loadDeployments() {
+    try {
+      const res = await fetch(`${API}/deployments`);
+      const data = await res.json();
+      renderCards(data);
+    } catch (e) {
+      toast('서버 연결 실패', 'error');
+    }
+  }
+
+  function renderCards(apps) {
+    const container = document.getElementById('cards');
+    const empty     = document.getElementById('empty');
+
+    // stats
+    document.getElementById('stat-total').textContent   = apps.length;
+    document.getElementById('stat-running').textContent = apps.filter(a => a.status === 'Running').length;
+
+    const times = apps.map(a => parseInt(a.elapsed)).filter(n => !isNaN(n));
+    const avgTime = times.length ? Math.round(times.reduce((a,b)=>a+b,0)/times.length) : null;
+    document.getElementById('stat-elapsed').textContent = avgTime ? `${avgTime}s` : '-';
+
+    // clear old cards (keep empty sentinel)
+    [...container.querySelectorAll('.app-card')].forEach(el => el.remove());
+
+    if (apps.length === 0) {
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+
+    apps.forEach(app => {
+      const card = document.createElement('div');
+      card.className = 'app-card';
+      card.innerHTML = `
+        <div class="card-top">
+          <span class="app-name">${esc(app.app_name)}</span>
+          <span class="status-badge status-${esc(app.status)}">${esc(app.status)}</span>
+        </div>
+        <div class="card-meta">
+          <span>🕒 ${esc(app.started_at ? app.started_at.slice(0,19).replace('T',' ') : '-')}</span>
+          <span>⏱ ${esc(app.elapsed)}</span>
+          <span>📦 <a href="${esc(app.github_url)}" target="_blank">${esc(app.github_url)}</a></span>
+        </div>
+        <div class="card-url">
+          <a href="${esc(app.url)}" target="_blank">${esc(app.url)}</a>
+        </div>
+        <div class="card-actions">
+          <button class="btn-sm btn-status" data-name="${esc(app.app_name)}">Status</button>
+          <button class="btn-sm btn-delete" data-name="${esc(app.app_name)}">Delete</button>
+        </div>
+      `;
+      container.appendChild(card);
+    });
+
+    // bind buttons
+    container.querySelectorAll('.btn-status').forEach(btn => {
+      btn.addEventListener('click', () => fetchStatus(btn.dataset.name));
+    });
+    container.querySelectorAll('.btn-delete').forEach(btn => {
+      btn.addEventListener('click', () => confirmDelete(btn.dataset.name));
+    });
+  }
+
+  function esc(str) {
+    if (str == null) return '';
+    return String(str)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Deploy ──
+  document.getElementById('btn-deploy-modal').addEventListener('click', () => {
+    document.getElementById('f-app').value  = '';
+    document.getElementById('f-url').value  = '';
+    document.getElementById('f-port').value = '8000';
+    openModal('deploy-modal');
+  });
+  document.getElementById('btn-cancel-deploy').addEventListener('click', () => closeModal('deploy-modal'));
+
+  document.getElementById('btn-submit-deploy').addEventListener('click', async () => {
+    const btn      = document.getElementById('btn-submit-deploy');
+    const app_name = document.getElementById('f-app').value.trim();
+    const github_url = document.getElementById('f-url').value.trim();
+    const port     = parseInt(document.getElementById('f-port').value);
+
+    if (!app_name || !github_url || !port) {
+      toast('모든 필드를 입력하세요', 'error');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>배포 중...';
+
+    try {
+      const res = await fetch(`${API}/deploy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ app_name, github_url, port })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.detail || '배포 실패', 'error');
+      } else {
+        toast(`✅ ${data.app_name} 배포 완료 (${data.elapsed})`, 'success', 5000);
+        closeModal('deploy-modal');
+        loadDeployments();
+      }
+    } catch (e) {
+      toast('네트워크 오류', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'Deploy';
+    }
+  });
+
+  // ── Status ──
+  async function fetchStatus(app_name) {
+    document.getElementById('status-modal-title').textContent = app_name;
+    document.getElementById('status-modal-body').innerHTML = '<div style="color:#64748b;font-size:0.85rem">불러오는 중...</div>';
+    openModal('status-modal');
+
+    try {
+      const res  = await fetch(`${API}/status/${app_name}`);
+      const data = await res.json();
+      if (!res.ok) { document.getElementById('status-modal-body').innerHTML = `<p style="color:#f87171">${esc(data.detail)}</p>`; return; }
+
+      const pods = (data.status || []).map(p => `
+        <div class="pod-row">
+          <span class="pod-dot ${esc(p.status)}"></span>
+          <span class="pod-name">${esc(p.name)}</span>
+          <span style="font-size:0.75rem;color:#94a3b8">${esc(p.status)}</span>
+          <span style="font-size:0.75rem;color:#64748b">${esc(p.node)}</span>
+        </div>`).join('');
+
+      const hpa = data.hpa || {};
+      document.getElementById('status-modal-body').innerHTML = `
+        <div class="status-section">
+          <h4>Replicas</h4>
+          <div style="font-size:1.5rem;font-weight:700;color:#818cf8">${esc(data.replicas)}</div>
+        </div>
+        <div class="status-section">
+          <h4>Pods</h4>
+          ${pods || '<p style="color:#64748b;font-size:0.8rem">Pod 없음</p>'}
+        </div>
+        <div class="status-section">
+          <h4>HPA</h4>
+          <div class="hpa-grid">
+            <div class="hpa-item"><div class="k">Current</div><div class="v">${hpa.current_replicas ?? '-'}</div></div>
+            <div class="hpa-item"><div class="k">Desired</div><div class="v">${hpa.desired_replicas ?? '-'}</div></div>
+            <div class="hpa-item"><div class="k">Max</div><div class="v">${hpa.max_replicas ?? '-'}</div></div>
+            <div class="hpa-item"><div class="k">CPU %</div><div class="v">${hpa.cpu_utilization ?? '-'}%</div></div>
+          </div>
+        </div>
+      `;
+    } catch (e) {
+      document.getElementById('status-modal-body').innerHTML = '<p style="color:#f87171">조회 실패</p>';
+    }
+  }
+  document.getElementById('btn-close-status').addEventListener('click', () => closeModal('status-modal'));
+
+  // ── Delete ──
+  async function confirmDelete(app_name) {
+    if (!confirm(`"${app_name}" 앱을 삭제하시겠습니까?\nNamespace 및 모든 K8s 리소스가 삭제됩니다.`)) return;
+
+    toast(`${app_name} 삭제 중...`, 'info');
+    try {
+      const res  = await fetch(`${API}/deploy/${app_name}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.detail || '삭제 실패', 'error');
+      } else {
+        toast(data.result, 'success');
+        loadDeployments();
+      }
+    } catch (e) {
+      toast('네트워크 오류', 'error');
+    }
+  }
+
+  // ── Close modal on backdrop click ──
+  document.querySelectorAll('.modal-bg').forEach(bg => {
+    bg.addEventListener('click', e => { if (e.target === bg) bg.classList.remove('open'); });
+  });
+
+  // ── Init ──
+  loadDeployments();
+  setInterval(loadDeployments, 30000);  // auto-refresh every 30s
+</script>
+</body>
+</html>
