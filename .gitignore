@@ -164,3 +164,7 @@ secrets.yaml
 # Logs
 logs/
 *.log
+
+# Project-specific
+CLAUDE.md
+k8s_templates/
