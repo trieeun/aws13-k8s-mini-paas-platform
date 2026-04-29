@@ -6,7 +6,7 @@ from kubernetes import client, config
 
 config.load_kube_config()
 
-LB_IP    = "211.183.3.200"
+LB_IP    = "211.183.3.150"
 TMPL_DIR = "/k8s/paas/templates"
 OUT_DIR  = "/k8s/paas/out"
 
@@ -62,6 +62,52 @@ def kubectl_apply(yaml_path):
     subprocess.run(["kubectl", "apply", "-f", yaml_path], check=True)
 
 
+def get_namespace_phase(app_name):
+    """네임스페이스 상태 반환. 없으면 None, Terminating이면 'Terminating', 정상이면 'Active'."""
+    v1 = client.CoreV1Api()
+    ns_name = f"ns-{app_name}"
+    try:
+        ns = v1.read_namespace(ns_name)
+        if ns.metadata.deletion_timestamp:
+            return "Terminating"
+        return ns.status.phase  # 'Active'
+    except client.exceptions.ApiException as e:
+        if e.status == 404:
+            return None
+        raise
+
+
+def wait_for_namespace_deletion(app_name, timeout=120):
+    """네임스페이스가 완전히 삭제될 때까지 대기. Terminating 상태면 finalizer 강제 제거."""
+    import time
+    ns_name = f"ns-{app_name}"
+    v1 = client.CoreV1Api()
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            ns = v1.read_namespace(ns_name)
+        except client.exceptions.ApiException as e:
+            if e.status == 404:
+                return  # 완전히 삭제됨
+            raise
+
+        # Terminating 상태에서 finalizer가 걸려 있으면 강제 제거
+        if ns.metadata.deletion_timestamp and ns.spec.finalizers:
+            ns.spec.finalizers = []
+            try:
+                v1.replace_namespace_finalize(ns_name, ns)
+            except client.exceptions.ApiException:
+                pass
+
+        time.sleep(2)
+
+    raise TimeoutError(
+        f"네임스페이스 ns-{app_name}이 {timeout}초 내에 삭제되지 않았습니다. "
+        "잠시 후 다시 시도해주세요."
+    )
+
+
 # def copy_ghcr_secret(app_name):
 #     subprocess.run(
 #         f"kubectl get secret ghcr-secret -o yaml "
@@ -90,7 +136,18 @@ def deploy(app_name, github_url, port):
     # 2. 템플릿 치환
     out_path = render_template(app_name, image, port)
 
-    # 3. namespace 먼저
+    # 3. namespace 먼저 — Terminating 중이면 완전 삭제될 때까지 대기
+    v1 = client.CoreV1Api()
+    ns_name = f"ns-{app_name}"
+    try:
+        ns = v1.read_namespace(ns_name)
+        if ns.metadata.deletion_timestamp:
+            # 삭제 진행 중: finalizer 제거 후 완전 삭제 대기
+            wait_for_namespace_deletion(app_name)
+    except client.exceptions.ApiException as e:
+        if e.status != 404:
+            raise
+    # 네임스페이스가 없거나 완전히 삭제된 상태에서 apply
     kubectl_apply(f"{out_path}/namespace.yml")
 
     # 4. 나머지 리소스 (ghcr.io Public이므로 imagePullSecrets 불필요)
