@@ -13,29 +13,31 @@ OUT_DIR  = "/k8s/paas/out"
 
 def build_and_push(app_name, github_url):
     """git clone → docker build → ghcr.io push"""
-    # github_url에서 owner 자동 추출
-    # "https://github.com/myaccount/myapp" → "myaccount"
     parts = urlparse(github_url).path.strip("/").split("/")
     owner = parts[0]
 
     work_dir = f"/tmp/build-{app_name}"
     image    = f"ghcr.io/{owner}/{app_name}:latest"
 
-    # 1. clone
-    subprocess.run(["git", "clone", github_url, work_dir], check=True)
-
-    # Dockerfile 없으면 즉시 에러
-    if not os.path.exists(f"{work_dir}/Dockerfile"):
-        raise ValueError(f"Dockerfile not found in {github_url}")
-
-    # 2. build
-    subprocess.run(["docker", "build", "-t", image, work_dir], check=True)
-
-    # 3. push (마스터 노드에서 docker login ghcr.io 미리 필요)
-    subprocess.run(["docker", "push", image], check=True)
-
-    # 4. 임시 디렉토리 정리
+    # 이전 빌드 잔재 제거 (재배포 시 git clone 실패 방지)
     subprocess.run(["rm", "-rf", work_dir], check=True)
+
+    try:
+        # 1. clone
+        subprocess.run(["git", "clone", github_url, work_dir], check=True)
+
+        if not os.path.exists(f"{work_dir}/Dockerfile"):
+            raise ValueError(f"Dockerfile not found in {github_url}")
+
+        # 2. build
+        subprocess.run(["docker", "build", "-t", image, work_dir], check=True)
+
+        # 3. push (마스터 노드에서 docker login ghcr.io 미리 필요)
+        subprocess.run(["docker", "push", image], check=True)
+    finally:
+        # 성공/실패 무관하게 항상 정리
+        subprocess.run(["rm", "-rf", work_dir])
+        subprocess.run(["docker", "rmi", "-f", image])
 
     return image
 
@@ -60,13 +62,13 @@ def kubectl_apply(yaml_path):
     subprocess.run(["kubectl", "apply", "-f", yaml_path], check=True)
 
 
-def copy_ghcr_secret(app_name):
-    subprocess.run(
-        f"kubectl get secret ghcr-secret -o yaml "
-        f"| sed 's/namespace: default/namespace: ns-{app_name}/' "
-        f"| kubectl apply -f -",
-        shell=True, check=True
-    )
+# def copy_ghcr_secret(app_name):
+#     subprocess.run(
+#         f"kubectl get secret ghcr-secret -o yaml "
+#         f"| sed 's/namespace: default/namespace: ns-{app_name}/' "
+#         f"| kubectl apply -f -",
+#         shell=True, check=True
+#     )
 
 
 def wait_for_pod(app_name, timeout=120):
@@ -91,10 +93,7 @@ def deploy(app_name, github_url, port):
     # 3. namespace 먼저
     kubectl_apply(f"{out_path}/namespace.yml")
 
-    # 4. ghcr-secret 복사
-    copy_ghcr_secret(app_name)
-
-    # 5. 나머지 리소스
+    # 4. 나머지 리소스 (ghcr.io Public이므로 imagePullSecrets 불필요)
     for f in ["deployment", "service", "ingress", "hpa"]:
         kubectl_apply(f"{out_path}/{f}.yml")
 
