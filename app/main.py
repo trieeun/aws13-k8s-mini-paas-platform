@@ -29,6 +29,14 @@ def deploy(req: DeployRequest):
     if db.get_deployment(req.app_name):
         raise HTTPException(status_code=400, detail=f"{req.app_name} 이미 배포됨")
 
+    # k8s 네임스페이스가 아직 Terminating 상태인지 확인
+    ns_status = k8s_client.get_namespace_phase(req.app_name)
+    if ns_status == "Terminating":
+        raise HTTPException(
+            status_code=409,
+            detail=f"ns-{req.app_name} 네임스페이스가 아직 삭제 중입니다. 잠시 후 다시 시도해주세요."
+        )
+
     try:
         url, image, started_at, finished_at = k8s_client.deploy(
             req.app_name, req.github_url, req.port
